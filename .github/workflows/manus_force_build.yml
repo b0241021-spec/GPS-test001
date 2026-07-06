@@ -1,0 +1,70 @@
+name: Manus Force Build APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 1. 解壓縮 ZIP 檔案
+    - name: Unzip Project
+      run: |
+        unzip -q *.zip || true
+        rm -f *.zip
+
+    # 2. 💡 暴力破解：找出 settings.gradle 藏在哪裡，並把該目錄的所有檔案搬到最外層
+    - name: Locate and Move Project Files
+      run: |
+        echo "=== 開始地毯式搜尋 settings.gradle ==="
+        SETTINGS_PATH=$(find . -name "settings.gradle" -print -quit)
+        
+        if [ -z "$SETTINGS_PATH" ]; then
+          echo "錯誤：在 ZIP 檔內真的找不到 settings.gradle！請確認上傳的 ZIP 檔是否正確。"
+          exit 1
+        fi
+        
+        # 取得專案實際所在的目錄
+        REAL_ROOT=$(dirname "$SETTINGS_PATH")
+        echo "成功找到專案實際藏在：$REAL_ROOT"
+        
+        # 如果不是在最外層，就把裡面所有內容（包含隱藏檔）搬到最外層
+        if [ "$REAL_ROOT" != "." ]; then
+          echo "正在將檔案從 $REAL_ROOT 搬移到最外層目錄..."
+          cp -r "$REAL_ROOT"/* . 2>/dev/null || true
+          cp -r "$REAL_ROOT"/.* . 2>/dev/null || true
+        fi
+        
+        echo "=== 搬移後的根目錄檔案列表 ==="
+        ls -la
+
+    # 3. 設定 Java 17 環境
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    # 4. 在雲端自動補齊 Gradle 執行檔 (gradlew)
+    - name: Auto Patch Gradle Wrapper
+      run: |
+        echo "正在自動生成 Gradle 執行環境..."
+        gradle wrapper --gradle-version 8.2
+        chmod +x gradlew
+
+    # 5. 開始線上編譯
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --no-daemon
+
+    # 6. 上傳產出的 APK 供手機下載
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: GPS-App-APK
+        path: "**/build/outputs/apk/debug/*.apk"
