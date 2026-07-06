@@ -1,0 +1,71 @@
+name: Manus Smart Build APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 1. 解壓縮 ZIP 檔案
+    - name: Unzip Project
+      run: |
+        unzip -q *.zip || true
+        rm -f *.zip
+
+    # 2. 💡 智慧診斷：自動尋找真正的專案根目錄在哪裡
+    - name: Diagnose and Fix Directory Structure
+      run: |
+        echo "=== 正在檢查目前的目錄結構 ==="
+        ls -R
+        
+        # 如果發現真正的專案被包在子資料夾內，將其全部移到根目錄
+        if [ ! -f "pubspec.yaml" ] && [ ! -f "build.gradle" ] && [ ! -f "package.json" ]; then
+          echo "根目錄沒有找到任何專案設定檔，嘗試從子資料夾撈出檔案..."
+          mv */* . 2>/dev/null || true
+          mv */.* . 2>/dev/null || true
+        fi
+
+    # 3. 💡 智慧判斷與編譯：自動根據專案類型選擇編譯方式
+    - name: Automatically Build APK based on Project Type
+      run: |
+        # ---- 狀況 A：如果是 Flutter 專案 ----
+        if [ -f "pubspec.yaml" ]; then
+          echo "偵測到這是 Flutter 專案！正在安裝 Flutter 環境..."
+          sudo snap install flutter --classic
+          flutter doctor
+          echo "開始編譯 Flutter APK..."
+          flutter build apk --debug
+          exit 0
+        fi
+        
+        # ---- 狀況 B：如果是標準 Android 原生專案 ----
+        if [ -f "build.gradle" ] || [ -f "build.gradle.kts" ] || [ -f "settings.gradle" ]; then
+          echo "偵測到這是 Android 原生專案！正在補齊 Gradle 環境..."
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version 8.2
+          fi
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          exit 0
+        fi
+        
+        # ---- 狀況 C：完全沒有設定檔，可能是純 Java 或純 Kotlin 檔案 ----
+        echo "錯誤：在此專案內完全找不到 pubspec.yaml 或 build.gradle！"
+        echo "這可能只是純程式碼文字檔，缺乏專案包裝，請檢查 Manus AI 的生成內容。"
+        exit 1
+
+    # 4. 全域搜尋產出的 APK 並上傳
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: smart-manus-apk
+        path: |
+          **/build/outputs/apk/debug/*.apk
+          **/build/app/outputs/flutter-apk/*.apk
