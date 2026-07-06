@@ -1,0 +1,53 @@
+name: Unzip and Build APK002
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 1. 解壓縮您的 ZIP 檔
+    - name: Unzip Project
+      run: |
+        unzip -q *.zip
+        rm *.zip
+
+    # 2. 💡 核心修正：自動將子資料夾內的所有檔案移到根目錄
+    - name: Move files to root if nested
+      run: |
+        if [ ! -f "gradlew" ]; then
+          echo "未在根目錄找到 gradlew，嘗試從子資料夾撈出檔案..."
+          mv */* . 2>/dev/null || true
+          mv */.* . 2>/dev/null || true
+        fi
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: |
+        if [ -f "gradlew" ]; then
+          chmod +x gradlew
+        else
+          echo "錯誤：專案中完全找不到 gradlew 檔案！"
+          exit 1
+        fi
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+
+    # 3. 💡 自動搜尋產出的 APK（防止路徑不同找不到）
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: my-app-apk
+        path: "**/build/outputs/apk/debug/*.apk"
