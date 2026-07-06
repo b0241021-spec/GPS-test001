@@ -1,0 +1,72 @@
+name: Manus Ultimate Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 1. 解壓縮 ZIP 檔案
+    - name: Unzip Project
+      run: |
+        unzip -q *.zip || true
+        rm -f *.zip
+
+    # 2. 💡 智慧診斷與路徑修正：印出結構，如果包在子資料夾就搬移出來
+    - name: Diagnose and Move Files
+      run: |
+        echo "=== 這是目前解壓後的目錄結構 ==="
+        ls -R
+        
+        # 尋找 settings.gradle 或 build.gradle 或 pubspec.yaml 的位置
+        TARGET_DIR=$(find . -name "settings.gradle" -o -name "build.gradle" -o -name "pubspec.yaml" -print -quit)
+        
+        if [ ! -z "$TARGET_DIR" ]; then
+          REAL_ROOT=$(dirname "$TARGET_DIR")
+          echo "找到專案實際根目錄在：$REAL_ROOT"
+          if [ "$REAL_ROOT" != "." ]; then
+            echo "正在將所有檔案搬移到根目錄..."
+            mv "$REAL_ROOT"/* . 2>/dev/null || true
+            mv "$REAL_ROOT"/.* . 2>/dev/null || true
+          fi
+        fi
+
+    # 3. 💡 自動化環境判斷與編譯
+    - name: Auto Build APK
+      run: |
+        # 狀況 A：如果是 Flutter 專案
+        if [ -f "pubspec.yaml" ]; then
+          echo "偵測為 Flutter 專案，正在編譯..."
+          sudo snap install flutter --classic
+          flutter build apk --debug
+          exit 0
+        fi
+        
+        # 狀況 B：如果是原生 Android 專案
+        if [ -f "build.gradle" ] || [ -f "settings.gradle" ] || [ -f "build.gradle.kts" ]; then
+          echo "偵測為原生 Android 專案，自動初始化 Gradle..."
+          gradle wrapper --gradle-version 8.2
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          exit 0
+        fi
+        
+        echo "【嚴重錯誤】專案內完全找不到任何 Android 或 Flutter 的設定檔！"
+        echo "這代表 Manus AI 產出的可能只是純程式碼文字片段，不包含完整的專案結構。"
+        exit 1
+
+    # 4. 上傳產出的 APK
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ultimate-manus-apk
+        path: |
+          **/build/outputs/apk/debug/*.apk
+          **/build/app/outputs/flutter-apk/*.apk
